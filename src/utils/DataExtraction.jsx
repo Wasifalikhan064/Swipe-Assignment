@@ -1,9 +1,8 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import * as XLSX from "xlsx";
 
-const apiKey=import.meta.env.VITE_APP_KEY
+const apiKey = import.meta.env.VITE_APP_KEY;
 const genAI = new GoogleGenerativeAI(apiKey);
-
 
 export const extractData = async (file) => {
   try {
@@ -27,7 +26,6 @@ export const extractData = async (file) => {
   }
 };
 
-
 const processExcelFile = async (uploadedFile) => {
   try {
     if (!uploadedFile || !(uploadedFile instanceof Blob)) {
@@ -37,17 +35,21 @@ const processExcelFile = async (uploadedFile) => {
     const fileReader = new FileReader();
     let organizedData;
 
-    const parsedData = await new Promise((resolve, reject) => {
+     await new Promise((resolve, reject) => {
       fileReader.onload = async (event) => {
         try {
           const rawData = new Uint8Array(event.target.result);
-          const workbook = XLSX.read(rawData, { type: 'array' });
+          const workbook = XLSX.read(rawData, { type: "array" });
           const sheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[sheetName];
-          const jsonContent = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+          const jsonContent = XLSX.utils.sheet_to_json(worksheet, {
+            header: 1,
+          });
 
           if (!jsonContent || jsonContent.length === 0) {
-            throw new Error("The Excel file is empty or improperly structured.");
+            throw new Error(
+              "The Excel file is empty or improperly structured."
+            );
           }
 
           const contentAsString = JSON.stringify(jsonContent);
@@ -64,6 +66,15 @@ const processExcelFile = async (uploadedFile) => {
     - Columns: Serial Number, Customer Name, Product Name, Quantity, Tax, Total Amount, Date
     - Please ensure that all quantities, totals, taxes, and dates are formatted correctly.
     - Date should be in ISO 8601 format (YYYY-MM-DD).
+    - Extract transaction data including invoice details such as:
+      Serial Number
+      Customer Name (if available, else leave blank)
+      Product Name
+      Quantity (as a number)
+      Tax (as a percentage, without the "%" symbol)
+      Total Amount (as a number, inclusive of taxes)
+      Date (in ISO 8601 format: YYYY-MM-DD)
+      Ensure all numerical values (quantity, tax, total amount) are parsed as numbers.
 
 2. **Products**:
     - Extract information about each product in the invoices.
@@ -71,15 +82,26 @@ const processExcelFile = async (uploadedFile) => {
     - Please include a "Category" if it's available in the data, or leave it empty if not.
     - Price with Tax = Unit Price + Tax (calculate this based on available data).
     - Ensure all quantities, prices, and tax are formatted as numbers.
+    - Extract detailed information about each unique product mentioned in the invoices:
+      Product Name
+      Category (if available, else leave blank)
+      Unit Price (as a number, exclusive of taxes)
+      Tax (as a percentage)
+      Price with Tax (calculate if not provided: Unit Price + (Unit Price * Tax / 100))
+      Stock Quantity (if available, else leave as null)
+      Duplicate products, so each product appears only once with its consolidated details.
 
-3. **Customers**:
+      3. **Customers**:
     - Extract customer information, including details from the invoices.
     - Columns: Customer Name, Phone Number, Total Purchase Amount.
     - If the "Phone Number" is not available, leave it empty.
     - Ensure that the "Total Purchase Amount" is the total spent by each customer (sum of their invoice totals).
-
-Please format the output as follows:
-
+    - Extract and consolidate customer details from the invoices:
+      Customer Name (use a placeholder like "Unknown" if not available)
+      Phone Number (if available, else leave blank)
+      Total Purchase Amount (sum of all their invoice totals, inclusive of taxes)
+      For Excel files follow the strict format of schema given above also strictly ensure that neither extra space nor extra character should be present ,neither any single syntax error should occur neither JSON input should unexpectedly end
+- Output the result in valid JSON format with the structure:
 {
     "Invoices": [
         {
@@ -110,48 +132,48 @@ Please format the output as follows:
     ]
 }
 
-Make sure the values are formatted correctly: 
-- All numerical values (quantity, total, tax, price) should be numbers.
-- Dates should be in ISO 8601 format (YYYY-MM-DD).
-- If a piece of information is missing, leave it empty, or flag uncertain entries where needed.
+Formatting Guidelines:
+
+Ensure all numerical values (e.g., quantity, totals, tax, prices) are properly formatted as numbers, not strings.
+Dates must strictly follow ISO 8601 format (YYYY-MM-DD).
+Leave missing or unavailable data fields empty (e.g., "" or null).
+De duplicate products and customers, ensuring consolidated details.
+Edge Cases:
+
+Handle cases where invoice rows might have duplicate or redundant product names within the same invoice (e.g., "Shipping Charges" repeated).
+Summarize purchase totals by customer correctly, even if the customer's name is missing or repeated.
+Account for possible variations in data formats (e.g., different numeric precision or redundant trailing zeros).
 
 Provide the output in valid JSON format, and ensure all values are aligned with the specified schema.`;
 
-          const modelResponse = await aiModel.generateContent([contentAsString, requestPrompt]);
+          const modelResponse = await aiModel.generateContent([
+            contentAsString,
+            requestPrompt,
+          ]);
           const response = await modelResponse.response;
-          let aiOutput = response.text();
+          let res = response.text();
+          res = res.substring(7);
+          res = res.slice(0, -3);
+          res = res
+            .trim() // Remove leading and trailing whitespace
+            .replace(/^[^{\[]*/, "") // Remove anything before the first `{` or `[`
+            .replace(/[^}\]]*$/, "") // Remove anything after the last `}` or `]`
+            .replace(/```json|```/g, "") // Remove Markdown markers
+            .replace(/,\s*([\]}])/g, "$1") // Remove trailing commas
+            .replace(/[\u0000-\u001F\u007F]/g, "") // Remove non-printable characters
+            .replace(/\/\/.*$/gm, "") // Remove single-line comments
+            .replace(/\/\*[\s\S]*?\*\//g, "") // Remove multi-line comments
+            .replace(/\s+/g, " "); // Normalize whitespace
 
-          // Trim extra characters at the start and end of the response
-          aiOutput = aiOutput.slice(7, -3);
+          //console.log("Gemini response:", res);
 
-          // Further cleanup: Remove non-printable characters
-          aiOutput = aiOutput.replace(/[\u0000-\u001F\u007F]/g, "");
-
-          console.log("Raw AI Response:", aiOutput);
-
-          // Function to check if a string is valid JSON
-          const isValidJSON = (str) => {
-            try {
-              JSON.parse(str);
-              return true;
-            } catch (e) {
-              return false;
-            }
+          const parsedJson = JSON.parse(res);
+          organizedData = {
+            invoices: parsedJson?.Invoices || [],
+            products: parsedJson?.Products || [],
+            customers: parsedJson?.Customers || [],
           };
-
-          // Check if the AI output is valid JSON
-          if (isValidJSON(aiOutput)) {
-            const parsedJson = JSON.parse(aiOutput);
-            organizedData = {
-              invoices: parsedJson?.Invoices || [],
-              products: parsedJson?.Products || [],
-              customers: parsedJson?.Customers || [],
-            };
-            resolve(organizedData);
-          } else {
-            console.error("Invalid JSON format:", aiOutput);
-            reject(new Error("AI response format is invalid."));
-          }
+          resolve(organizedData);
         } catch (err) {
           console.error("Error processing the Excel file:", err);
           reject(err);
@@ -165,9 +187,6 @@ Provide the output in valid JSON format, and ensure all values are aligned with 
 
       fileReader.readAsArrayBuffer(uploadedFile);
     });
-
-    //console.log("Structured Data:", parsedData);
-
     return {
       success: true,
       data: organizedData,
@@ -181,7 +200,9 @@ Provide the output in valid JSON format, and ensure all values are aligned with 
 const handleFileExtraction = async (uploadedFile) => {
   try {
     // Load the generative AI model
-    const aiModel = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+    const aiModel = genAI.getGenerativeModel({
+      model: "gemini-1.5-pro-latest",
+    });
 
     // Convert the file into base64 and metadata for processing
     const artifactData = await generateArtifactFromFile(uploadedFile);
@@ -241,7 +262,10 @@ const handleFileExtraction = async (uploadedFile) => {
     `;
 
     // Generate AI-based content
-    const generatedContent = await aiModel.generateContent([artifactData, extractionPrompt]);
+    const generatedContent = await aiModel.generateContent([
+      artifactData,
+      extractionPrompt,
+    ]);
     const aiResponse = await generatedContent.response.text();
 
     //console.log("AI Raw Response:", aiResponse);
@@ -249,7 +273,10 @@ const handleFileExtraction = async (uploadedFile) => {
     // Extract valid JSON part from the response (assuming it contains extra characters)
     const jsonResponseStart = aiResponse.indexOf("{");
     const jsonResponseEnd = aiResponse.lastIndexOf("}") + 1;
-    const jsonContent = aiResponse.substring(jsonResponseStart, jsonResponseEnd);
+    const jsonContent = aiResponse.substring(
+      jsonResponseStart,
+      jsonResponseEnd
+    );
 
     // Parse the JSON and map to required structure
     const parsedJson = JSON.parse(jsonContent);
