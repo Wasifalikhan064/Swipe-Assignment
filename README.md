@@ -1,4 +1,4 @@
-# Swipe Invoice Management App
+# Invoice Management App
 
 ### live 
 https://swipe-assignment-tmon.onrender.com/
@@ -40,13 +40,13 @@ https://swipe-assignment-tmon.onrender.com/
 ### To Install and Test
 
 ```bash
-git clone git@github.com:Wasifalikhan064/Swipe-Assignment.git
-cd Swipe-Assignment
+git clone git@github.com:Wasifalikhan064/InvoiceManager.git
+cd InvoiceManager
 ```
 
 ```bash
 # Install  dependencies
-cd Swipe-Assignment
+cd InvoiceManager
 npm install
 
 ```
@@ -54,7 +54,7 @@ npm install
 ```bash
 
 # Start 
-cd Swipe-Assignment
+cd InvoiceManager
 npm run dev
 
 ```
